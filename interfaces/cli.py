@@ -48,6 +48,34 @@ class JarvisCLI:
         """Retorna um spinner de status indicando processamento cognitivo."""
         return self.console.status("[bold blue]J.A.R.V.I.S. está processando...", spinner="dots")
 
+    def create_live_response(self) -> "Live":
+        """Cria e retorna uma sessão Live para renderização de resposta em tempo real."""
+        from rich.live import Live
+
+        return Live(
+            Panel(
+                "",
+                title="[bold cyan]J.A.R.V.I.S.[/bold cyan]",
+                border_style="cyan",
+                padding=(0, 2),
+            ),
+            console=self.console,
+            refresh_per_second=15,
+            transient=False,
+        )
+
+    def update_live_response(self, live: "Live", text: str) -> None:
+        """Atualiza o painel Live com o texto acumulado renderizado em Markdown."""
+        md = Markdown(text) if text.strip() else Text("")
+        live.update(
+            Panel(
+                md,
+                title="[bold cyan]J.A.R.V.I.S.[/bold cyan]",
+                border_style="cyan",
+                padding=(0, 2),
+            )
+        )
+
     def display_response(self, text: str) -> None:
         """Exibe a resposta formatada do assistente no terminal."""
         md = Markdown(text)

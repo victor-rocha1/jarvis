@@ -1,11 +1,11 @@
 """
 Motor de IA central do J.A.R.V.I.S.
 Gerencia a comunicação assíncrona com o Gemini via google-genai,
-controle de contexto e futura orquestração de plugins (Function Calling).
+com suporte a streaming de texto token-a-token e resiliência a falhas.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ServerError
@@ -72,15 +72,18 @@ class JarvisBrain:
         self._plugins[plugin.name] = plugin
         logger.info("Plugin '%s' registrado no JarvisBrain.", plugin.name)
 
-    async def think_and_respond(self, user_input: str) -> str:
-        """Processa a mensagem do usuário, mantém o histórico e retorna a resposta."""
+    async def process_input_stream(self, user_input: str) -> AsyncIterator[str]:
+        """Processa a mensagem do usuário via streaming em tempo real.
+        
+        Yields:
+            str: Chunks de texto progressivos conforme são gerados pelo modelo.
+        """
         if not user_input.strip():
-            return ""
+            return
 
         # Registra a entrada do usuário na memória local
         self.memory.add_user_message(user_input)
-
-        # Tentativa de chamada com resiliência a quedas/indisponibilidade
+        accumulated_chunks: List[str] = []
         last_error: Optional[Exception] = None
 
         for model_candidate in self.fallback_models:
@@ -89,33 +92,40 @@ class JarvisBrain:
                     self._create_chat_session(model_candidate)
 
                 assert self._chat is not None
-                response = await self._chat.send_message(user_input)
-                response_text = response.text.strip() if response.text else ""
+                response_stream = await self._chat.send_message_stream(user_input)
 
-                if not response_text:
-                    response_text = "Comando processado com sucesso, senhor."
+                async for chunk in response_stream:
+                    if chunk.text:
+                        accumulated_chunks.append(chunk.text)
+                        yield chunk.text
 
-                # Registra a resposta do assistente na memória
-                self.memory.add_model_message(response_text)
-                return response_text
+                full_response = "".join(accumulated_chunks).strip()
+                if not full_response:
+                    full_response = "Comando processado com sucesso, senhor."
+                    yield full_response
+
+                # Salva a resposta completa gerada na memória
+                self.memory.add_model_message(full_response)
+                return
 
             except ServerError as srv_err:
                 logger.warning(
-                    "Modelo %s indisponível (%s). Tentando modelo alternativo...",
+                    "Modelo %s indisponível (%s). Tentando fallback de streaming...",
                     model_candidate,
                     srv_err,
                 )
                 last_error = srv_err
+                accumulated_chunks.clear()
                 continue
 
             except APIError as api_err:
                 logger.error("Erro na API do Gemini [%s]: %s", model_candidate, api_err)
                 last_error = api_err
-                # Tenta próximo modelo em caso de 404/503
+                accumulated_chunks.clear()
                 continue
 
             except Exception as exc:
-                logger.error("Falha inesperada no processamento cognitivo: %s", exc)
+                logger.error("Falha inesperada no streaming cognitivo: %s", exc)
                 last_error = exc
                 break
 
@@ -125,4 +135,11 @@ class JarvisBrain:
             f"com os servidores centrais ({type(last_error).__name__ if last_error else 'Erro desconhecido'})."
         )
         self.memory.add_model_message(error_msg)
-        return error_msg
+        yield error_msg
+
+    async def think_and_respond(self, user_input: str) -> str:
+        """Processa a mensagem do usuário e retorna a resposta completa agregada."""
+        chunks: List[str] = []
+        async for chunk in self.process_input_stream(user_input):
+            chunks.append(chunk)
+        return "".join(chunks).strip()

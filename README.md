@@ -1,5 +1,22 @@
 # Projeto J.A.R.V.I.S. - Arquitetura e Planejamento
 
+# Passos do Projeto
+
+## Fase 1 — MVP&#x20;
+
+Concluída
+
+- Core/Brain: Gemini + Memory + Resiliência de Fallback
+- Interfaces/CLI: Rich Terminal + Status Bar
+- Interfaces/Voice: Edge-TTS pt-BR + Pygame Async
+
+## Fase 2 — Hardware & BLE&#x20;
+
+Próximo passo
+
+- Function Calling Loop: Implementação no Brain
+- Plugin Geonav Light: Comandos BLE GATT via Bleak
+
 ## 1. Visão Geral e Princípios
 O sistema é projetado sob o padrão de **Arquitetura Modular (Desacoplada)**. O objetivo é garantir que o assistente possa iniciar de forma simples (texto no terminal) e evoluir para um sistema complexo (reconhecimento de voz, controle Bluetooth, painel HUD) sem a necessidade de reescrever o código base.
 
